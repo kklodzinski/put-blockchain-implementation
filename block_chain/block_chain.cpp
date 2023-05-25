@@ -34,7 +34,7 @@ void block_chain::add_transaction(uint64_t sender_id, uint64_t recipient_id, uin
     new_transaction.transaction_id = ++last_transaction_id;
 
     unsigned char signature[RSA_size(private_key)];
-    generate_signature(new_transaction, private_key, signature);
+    generate_signature(&new_transaction, private_key, signature);
 
     std::memcpy(new_transaction.signature, signature, sizeof(signature));
 
@@ -61,6 +61,7 @@ transaction_block_t block_chain::create_transaction_block(char previous_block_ha
     }
 
     transactions.clear();
+    newest_transaction_block = new_block;
     return new_block;
 }
 
