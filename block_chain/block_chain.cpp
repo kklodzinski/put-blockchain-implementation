@@ -2,6 +2,26 @@
 
 namespace put::blockchain::block_chain
 {
+void calculate_hash(const unsigned char *data, size_t len, unsigned char *hash)
+{
+    SHA256_CTX sha_ctx;
+    SHA256_Init(&sha_ctx);
+    SHA256_Update(&sha_ctx, data, len);
+    SHA256_Final(hash, &sha_ctx);
+}
+
+void generate_signature(const transaction_t &transaction, RSA *private_key, unsigned char *signature)
+{
+    unsigned char data[sizeof(transaction_t)];
+    memcpy(data, &transaction, sizeof(transaction_t));
+
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    calculate_hash(data, sizeof(transaction_t), hash);
+
+    unsigned int sig_len;
+    RSA_sign(NID_sha256, hash, SHA256_DIGEST_LENGTH, signature, &sig_len, private_key);
+}
+
 block_chain::block_chain(std::string private_key_file_name, uint64_t last_transaction_id)
     : last_transaction_id(last_transaction_id)
 {
@@ -34,7 +54,7 @@ void block_chain::add_transaction(uint64_t sender_id, uint64_t recipient_id, uin
     new_transaction.transaction_id = ++last_transaction_id;
 
     unsigned char signature[RSA_size(private_key)];
-    generate_signature(&new_transaction, private_key, signature);
+    generate_signature(new_transaction, private_key, signature);
 
     std::memcpy(new_transaction.signature, signature, sizeof(signature));
 

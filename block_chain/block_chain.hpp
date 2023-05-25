@@ -12,25 +12,6 @@
 
 namespace put::blockchain::block_chain
 {
-void calculate_hash(const unsigned char *data, size_t len, unsigned char *hash)
-{
-    SHA256_CTX sha_ctx;
-    SHA256_Init(&sha_ctx);
-    SHA256_Update(&sha_ctx, data, len);
-    SHA256_Final(hash, &sha_ctx);
-}
-
-void generate_signature(const transaction_t &transaction, RSA *private_key, unsigned char *signature)
-{
-    unsigned char data[sizeof(transaction_t)];
-    memcpy(data, &transaction, sizeof(transaction_t));
-
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    calculate_hash(data, sizeof(transaction_t), hash);
-
-    unsigned int sig_len;
-    RSA_sign(NID_sha256, hash, SHA256_DIGEST_LENGTH, signature, &sig_len, private_key);
-}
 struct transaction_t
 {
     uint16_t transaction_id;
