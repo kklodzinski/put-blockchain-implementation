@@ -18,7 +18,7 @@ struct transaction_t
     uint64_t sender_id;
     uint64_t recipient_id;
     uint64_t transaction_amount;
-    char signature[SHA256_DIGEST_LENGTH] = {0};
+    char signature[256] = {0};
 };
 struct transaction_block_t
 {
@@ -38,7 +38,7 @@ class block_chain
   public:
     block_chain(std::string private_key_file_name, uint64_t last_transaction_id);
     void set_private_key(std::string private_key_file_name);
-    void add_transaction(uint64_t sender_id, uint64_t recipient_id, uint64_t transaction_amount);
+    transaction_t add_transaction(uint64_t sender_id, uint64_t recipient_id, uint64_t transaction_amount);
     transaction_block_t create_transaction_block(char previous_block_hash[SHA256_DIGEST_LENGTH]);
     unsigned char *get_transaction_block_hash();
 };

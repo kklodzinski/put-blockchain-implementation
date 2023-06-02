@@ -1,13 +1,21 @@
 #include "block_chain.hpp"
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
+#include <vector>
 
 namespace put::blockchain::block_chain
 {
 void calculate_hash(const unsigned char *data, size_t len, unsigned char *hash)
 {
-    SHA256_CTX sha_ctx;
-    SHA256_Init(&sha_ctx);
-    SHA256_Update(&sha_ctx, data, len);
-    SHA256_Final(hash, &sha_ctx);
+    EVP_MD_CTX * md_ctx;
+    const EVP_MD * md;
+    md = EVP_get_digestbyname("sha256");
+    md_ctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex2(md_ctx, md, NULL);
+    EVP_DigestUpdate(md_ctx, data, len);
+    EVP_DigestFinal_ex(md_ctx, hash, NULL);
+    EVP_MD_CTX_free(md_ctx);
 }
 
 void generate_signature(const transaction_t &transaction, RSA *private_key, unsigned char *signature)
@@ -41,7 +49,7 @@ void block_chain::set_private_key(std::string private_key_file_name)
         std::cerr << "Failed to load private key" << std::endl;
     }
 }
-void block_chain::add_transaction(uint64_t sender_id, uint64_t recipient_id, uint64_t transaction_amount)
+transaction_t block_chain::add_transaction(uint64_t sender_id, uint64_t recipient_id, uint64_t transaction_amount)
 {
     if (transactions.size() >= 10)
     {
@@ -53,13 +61,16 @@ void block_chain::add_transaction(uint64_t sender_id, uint64_t recipient_id, uin
     new_transaction.transaction_amount = transaction_amount;
     new_transaction.transaction_id = ++last_transaction_id;
 
+    //unsigned char signature[RSA_size(private_key)];
     unsigned char signature[RSA_size(private_key)];
+    std::memset(signature, 0, sizeof(signature));
     generate_signature(new_transaction, private_key, signature);
 
     std::memcpy(new_transaction.signature, signature, sizeof(signature));
 
-    delete signature;
+    //delete signature;
     transactions.push_back(new_transaction);
+    return new_transaction;
 }
 
 transaction_block_t block_chain::create_transaction_block(char previous_block_hash[SHA256_DIGEST_LENGTH])
