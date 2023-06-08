@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <cstring>
+#include <openssl/bio.h>
 #include <openssl/ocsp.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
@@ -23,6 +24,21 @@
 #define TRUE   1 
 #define FALSE  0 
 #define PORT 8888 
+
+struct cmp_str
+{
+   bool operator()(unsigned char const *a, unsigned char const *b) const
+   {    
+        bool ret = true;
+        for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+            if (*a != *b) {
+                ret = false;
+                break;
+            }
+        }
+      return ret;
+   }
+};
 
 int verify_transaction(put::blockchain::block_chain::transaction_t &transaction, RSA * public_key) {
 
@@ -55,8 +71,13 @@ int main(int argc , char *argv[])
 {  
 
     // Init RSA key reading
-    RSA * public_key = nullptr;
+    RSA * public_key; // = nullptr;
     BIO * bio = BIO_new(BIO_s_mem());
+
+    // Init user list
+    std::unordered_map<std::string, unsigned int> user_list;
+    unsigned int last_user_id = 0;
+    user_list.emplace("Here will be server public key", last_user_id);
 
     // Init blockchain
     put::blockchain::block_chain::block_chain blockchain("./keys/private_server.pem", 0);
@@ -70,12 +91,22 @@ int main(int argc , char *argv[])
     blockchain.add_transaction(18, 14, 5);
     blockchain.add_transaction(0, 15, 4);
     blockchain.add_transaction(1, 10, 1);
-    char hash[SHA256_DIGEST_LENGTH] = {0};
+    unsigned char hash[SHA256_DIGEST_LENGTH] = {0};
 
     put::blockchain::block_chain::transaction_block_t block;
     block = blockchain.create_transaction_block(hash);
-    std::unordered_map<char *, put::blockchain::block_chain::transaction_block_t> map; 
-    map.emplace(block.previous_block_hash, block);
+    blockchain.get_transaction_block_hash(hash);
+    std::unordered_map<std::string, put::blockchain::block_chain::transaction_block_t> map; 
+    map.emplace(std::string(reinterpret_cast<char const *>(hash)), block);
+    unsigned int block_id = 0;
+    std::unordered_map<unsigned char *, unsigned int> chain; //, cmp_str> chain;
+    //chain.emplace(reinterpret_cast<char const *>(block.previous_block_hash), block_id);
+    chain.emplace(block.previous_block_hash, block_id);
+    //chain.emplace(reinterpret_cast<char const *>(hash), ++block_id);
+    chain.emplace(hash, ++block_id);
+    std::vector<put::blockchain::block_chain::transaction_block_t> blocks;
+    blocks.push_back(block);
+    std::vector<put::blockchain::block_chain::transaction_t> ledger;
 
     put::blockchain::block_chain::transaction_t current_transaction;
 
@@ -87,7 +118,7 @@ int main(int argc , char *argv[])
     struct sockaddr_in address;  
          
     char buffer[1025] = { 0 };  //data buffer of 1K 
-    char key_buffer[10000] = {0};
+    char key_buffer[452] = {0};
          
     //set of socket descriptors 
     fd_set readfds;  
@@ -140,7 +171,8 @@ int main(int argc , char *argv[])
     //accept the incoming connection 
     addrlen = sizeof(address);  
     puts("Waiting for connections ...");  
-         
+    char identity[7];         
+
     while(TRUE)  
     {  
         //clear the socket set 
@@ -199,25 +231,122 @@ int main(int argc , char *argv[])
                  
             puts("Welcome message sent successfully");
 
-            // Receive public key, add to list of users and send user id
-            //valread = recv(sd, buffer, 1024, 0);
+            // Receive identity
+            recv(new_socket, &identity, 7, 0);
 
+            // Sync client
+            if (std::strcmp(identity, "client") == 0) {
+                // Receive public key, add to list of users and send user id
+                recv(new_socket, key_buffer, sizeof(key_buffer), 0);
+                std::cout << "buffer: \n" << key_buffer << std::endl;
+                BIO_puts(bio, key_buffer);
+                public_key = PEM_read_bio_RSAPublicKey(bio, &public_key, nullptr, nullptr);
+                std::cout << "is key null: " << (public_key == NULL) << std::endl;
+                
+                if (user_list.find(std::string(key_buffer)) == user_list.end()) {
+                    user_list.emplace(key_buffer, ++last_user_id);
+                }
 
-            // Receive last block hash
-            valread = recv(new_socket, key_buffer, sizeof(key_buffer), 0);
-            BIO_puts(bio, buffer);
+                // In c++20 but does not want to work
+                //if (!user_list.contains(key_buffer)) {
+                //    user_list.emplace(key_buffer, ++last_user_id);
+                //}
 
-            if (valread == -1)
-            {
-                fprintf(stderr, "recv: %s (%d)\n", strerror(errno), errno);
+                // Send user id to use for transactions
+                if (user_list.find(std::string(key_buffer)) == user_list.end()) {
+                    perror("failed to find user");
+                }
+                send(new_socket, &user_list.at(key_buffer), sizeof(last_user_id), 0);
+
+                // Send last transaction id
+                unsigned int count = blocks.size() * 10 + ledger.size();
+                send(new_socket, &count, sizeof(unsigned int), 0);
+
+                // Receive last block hash
+                valread = recv(new_socket, hash, SHA256_DIGEST_LENGTH + 1, 0);
+                if (valread == -1)
+                {
+                    fprintf(stderr, "recv: %s (%d)\n", strerror(errno), errno);
+                }
+                count = chain.size() - chain.at(hash);//chain.at(reinterpret_cast<char const * >(hash)) - 1;
+
+                // Send remaining blocks if any
+                std::cout << "Sending remaining blocks..." << std::endl;
+                send(new_socket, &count, sizeof(unsigned int), 0);
+                put::blockchain::block_chain::transaction_block_t current_block;
+                unsigned int index;
+                for (int i = 0; i < count; i++) {
+                    //current_block = blocks[chain.at(reinterpret_cast<char const *>(hash)) + i];
+                    index = chain.at(hash);
+                    current_block = blocks[index + i - 1];
+                    send(new_socket, &current_block, sizeof(put::blockchain::block_chain::transaction_block_t), 0);
+                    std::cout << "Block" << i << " sent" << std::endl;
+                }
+                std::cout << "Remaining blocks sent" << std::endl;
+
+                // Send transactions on ledger
+                count = ledger.size();
+                send(new_socket, &count, sizeof(unsigned int), 0);
+                for (int i = 0; i < count; i++) {
+                    send(new_socket, &ledger[i], sizeof(put::blockchain::block_chain::transaction_t), 0);
+                }
+            } else if (identity == "minerr") {
+                //Sync miner
+                // Receive public key, add to list of users and send user id
+                recv(new_socket, key_buffer, sizeof(key_buffer), 0);
+                std::cout << "buffer: \n" << key_buffer << std::endl;
+                BIO_puts(bio, key_buffer);
+                public_key = PEM_read_bio_RSAPublicKey(bio, &public_key, nullptr, nullptr);
+                std::cout << "is key null: " << (public_key == NULL) << std::endl;
+                
+                if (user_list.find(std::string(key_buffer)) == user_list.end()) {
+                    user_list.emplace(key_buffer, ++last_user_id);
+                }
+
+                // In c++20 but does not want to work
+                //if (!user_list.contains(key_buffer)) {
+                //    user_list.emplace(key_buffer, ++last_user_id);
+                //}
+
+                // Send user id to use for transactions
+                if (user_list.find(std::string(key_buffer)) == user_list.end()) {
+                    perror("failed to find user");
+                }
+                send(new_socket, &user_list.at(key_buffer), sizeof(last_user_id), 0);
+
+                // Send last transaction id
+                unsigned int count = blocks.size() * 10 + ledger.size();
+                send(new_socket, &count, sizeof(unsigned int), 0);
+
+                // Receive last block hash
+                valread = recv(new_socket, hash, SHA256_DIGEST_LENGTH + 1, 0);
+                if (valread == -1)
+                {
+                    fprintf(stderr, "recv: %s (%d)\n", strerror(errno), errno);
+                }
+                count = chain.size() - chain.at(hash);//chain.at(reinterpret_cast<char const * >(hash)) - 1;
+
+                // Send remaining blocks if any
+                std::cout << "Sending remaining blocks..." << std::endl;
+                send(new_socket, &count, sizeof(unsigned int), 0);
+                put::blockchain::block_chain::transaction_block_t current_block;
+                unsigned int index;
+                for (int i = 0; i < count; i++) {
+                    //current_block = blocks[chain.at(reinterpret_cast<char const *>(hash)) + i];
+                    index = chain.at(hash);
+                    current_block = blocks[index + i - 1];
+                    send(new_socket, &current_block, sizeof(put::blockchain::block_chain::transaction_block_t), 0);
+                    std::cout << "Block" << i << " sent" << std::endl;
+                }
+                std::cout << "Remaining blocks sent" << std::endl;
+
+                // Send transactions on ledger
+                count = ledger.size();
+                send(new_socket, &count, sizeof(unsigned int), 0);
+                for (int i = 0; i < count; i++) {
+                    send(new_socket, &ledger[i], sizeof(put::blockchain::block_chain::transaction_t), 0);
+                }
             }
-            std::cout << "Buffer read" << std::endl;
-            std::cout << key_buffer << "\n" << valread << " " << strlen(buffer) << std::endl;
-            public_key = PEM_read_bio_RSAPublicKey(bio, &public_key, nullptr, nullptr);
-            std::cout << public_key << std::endl;
-
-            // Send remaining blocks if any
-
 
             //add new socket to array of sockets 
             for (i = 0; i < max_clients; i++)  
@@ -244,7 +373,15 @@ int main(int argc , char *argv[])
                 //Check if it was for closing , and also read the 
                 //incoming message 
                 valread = read(sd, &current_transaction, sizeof(put::blockchain::block_chain::transaction_t));
-                std::cout << buffer << std::endl;
+                std::cout << buffer << " " << valread << std::endl;
+
+                // If is transaction add to current ledger
+                if (valread == sizeof(put::blockchain::block_chain::transaction_t)) {
+                    blockchain.add_transaction(current_transaction.sender_id, 
+                        current_transaction.recipient_id, 
+                        current_transaction.transaction_amount);
+                    std::cout << "added transaction" << std::endl;
+                }
 
                 //if ((valread = read( sd , buffer, 1024)) == 0)  
                 if (valread == 0)
@@ -267,9 +404,9 @@ int main(int argc , char *argv[])
                     //of the data read 
                     //buffer[valread] = '\0';  
                     //send(sd , buffer , strlen(buffer) , 0 );  
-                    std::memmove(&current_transaction, buffer, sizeof(current_transaction));
-                    valread = verify_transaction(current_transaction, public_key);
-                    std::cout << "transaction verified: " << valread << std::endl;
+                    //std::memmove(&current_transaction, buffer, sizeof(current_transaction));
+                    //valread = verify_transaction(current_transaction, public_key);
+                    std::cout << "something was done: " << valread << std::endl;
                 }  
             }  
         }  

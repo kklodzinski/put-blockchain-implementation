@@ -78,8 +78,8 @@ int main(int argc, char const* argv[])
     printf("%s\n", buffer);
 
     // Identify as client
-    std::string identity = "client";
-    send(client_fd, identity.c_str(), 7, 0);
+    std::string identity = "minerr";
+    send(client_fd, &identity, 7, 0);
 
     // Send public key
     std::cout << public_key << " " << sizeof(&public_key) << std::endl;

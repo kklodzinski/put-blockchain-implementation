@@ -22,7 +22,7 @@ struct transaction_t
 };
 struct transaction_block_t
 {
-    char previous_block_hash[SHA256_DIGEST_LENGTH];
+    unsigned char previous_block_hash[SHA256_DIGEST_LENGTH];
     transaction_t transactions[BLOCK_SIZE];
     uint64_t proof_of_work = NULL;
 };
@@ -39,8 +39,11 @@ class block_chain
     block_chain(std::string private_key_file_name, uint64_t last_transaction_id);
     void set_private_key(std::string private_key_file_name);
     transaction_t add_transaction(uint64_t sender_id, uint64_t recipient_id, uint64_t transaction_amount);
-    transaction_block_t create_transaction_block(char previous_block_hash[SHA256_DIGEST_LENGTH]);
+    transaction_t create_transaction(uint64_t sender_id, uint64_t recipient_id, uint64_t transaction_amount);
+    void add_transaction(transaction_t transaction);
+    transaction_block_t create_transaction_block(unsigned char previous_block_hash[SHA256_DIGEST_LENGTH]);
     unsigned char *get_transaction_block_hash();
+    void get_transaction_block_hash(unsigned char * transaction_hash);
 };
 
 } // namespace put::blockchain::block_chain
