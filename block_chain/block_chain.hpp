@@ -36,6 +36,7 @@ class block_chain
     transaction_block_t newest_transaction_block;
 
   public:
+    block_chain(uint64_t last_transaction_id);
     block_chain(std::string private_key_file_name, uint64_t last_transaction_id);
     void set_private_key(std::string private_key_file_name);
     transaction_t add_transaction(uint64_t sender_id, uint64_t recipient_id, uint64_t transaction_amount);

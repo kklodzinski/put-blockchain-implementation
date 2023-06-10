@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <fstream>
 #include <sstream>
+#include <ctime>
 
 #include "../block_chain/block_chain.hpp"
 
@@ -38,10 +39,9 @@ int main(int argc, char const* argv[])
     std::stringstream key_buffer;
     key_buffer << public_key_stream.rdbuf();
     std::string key_string(key_buffer.str());
+    public_key_stream.close();
 
     unsigned int user_id;
-    // Read stored blockchain - TODO
-    std::vector<put::blockchain::block_chain::transaction_block_t> blocks;
     
     // Init client
     int status, valread, client_fd;
@@ -77,38 +77,24 @@ int main(int argc, char const* argv[])
     valread = read(client_fd, buffer, 1024);
     printf("%s\n", buffer);
 
-    // Identify as client
+    // Identify as miner
     std::string identity = "minerr";
-    send(client_fd, &identity, 7, 0);
+    send(client_fd, identity.c_str(), 7, 0);
 
     // Send public key
     std::cout << public_key << " " << sizeof(&public_key) << std::endl;
     send(client_fd, key_string.c_str(), key_string.size(), 0);
-
-    // Receive user id
-    recv(client_fd, &user_id, sizeof(unsigned int), 0);
-    std::cout << "User id: " << user_id << std::endl;
 
     // Receive last transaction id
     unsigned int receiver_id; // To be reused for transactions
     recv(client_fd, &receiver_id, sizeof(unsigned int), 0);
     std::cout << "Last transaction id: " << receiver_id << std::endl;
 
-    put::blockchain::block_chain::block_chain blockchain("./keys/private.pem", receiver_id);
+    put::blockchain::block_chain::block_chain blockchain(receiver_id);
 
-    // Send last block hash
+    // Receive last block hash
     unsigned char hash[SHA256_DIGEST_LENGTH] = {0};
-    blockchain.get_transaction_block_hash(hash);
-    std::cout << "Current hash" << hash << std::endl;
-    send(client_fd, hash, sizeof(hash), 0);
-
-    // Receive blocks if any
-    put::blockchain::block_chain::transaction_block_t current_block;
-    recv(client_fd, &receiver_id, sizeof(unsigned int), 0);
-    for (int i = 0; i < receiver_id; i++) {
-        recv(client_fd, &current_block, sizeof(put::blockchain::block_chain::transaction_block_t), 0);
-        blocks.push_back(current_block);
-    }
+    recv(client_fd, hash, sizeof(hash), 0);
 
     // Receive transaction on ledger
     put::blockchain::block_chain::transaction_t current_transaction;
@@ -120,47 +106,29 @@ int main(int argc, char const* argv[])
         ledger_transaction_count++;
     }
 
-    // Calculate how much coins do you have
-    unsigned int coins = 0;
-    for (int i = 0; i < blocks.size(); i++) {
-        current_block = blocks.at(i);
-        for (int j = 0; j < 10; j++) {
-            if (current_block.transactions[j].recipient_id == user_id) {
-                coins += current_block.transactions[j].transaction_amount;
-            }
-        }
-    }
-    std::cout << "You have " << coins << "PUT coins" << std::endl;
-
     unsigned int choice = 1;
-    //unsigned int receiver_id;
     unsigned int amount;
     unsigned char transaction_or_block[sizeof(put::blockchain::block_chain::transaction_block_t)];
+    put::blockchain::block_chain::transaction_block_t current_block;
+    std::time_t timestamp;
+    std::cout << "Starting mining process..." << std::endl;
     while (choice != 0) {
 
+        // If enough transactions, generate block
+        if (ledger_transaction_count >= 10) {
+            std::cout << "Calculating new block" << std::endl;
+            current_block = blockchain.create_transaction_block(hash);
+            timestamp = std::time(nullptr);
+            send(client_fd, &current_block, sizeof(put::blockchain::block_chain::transaction_block_t), 0);
+            send(client_fd, &timestamp, sizeof(std::time_t), 0);
+            ledger_transaction_count -= 10;
+        }
 
-
-        std::cout << "What do you want to do:\n\t0: exit\n\t1: add transaction" << std::endl;
-        std::cin >> choice;
-        std::cout << choice << std::endl;
-
-        switch (choice) {
-            // Sending new transaction
-            case 1:
-                std::cout << "To who? ";
-                std::cin >> receiver_id;
-                std::cout << "Amount: ";
-                std::cin >> amount;
-                current_transaction = blockchain.add_transaction(1, 2, 20);
-                send(client_fd, &current_transaction, sizeof(current_transaction), 0);
-                break;
-            case 0:
-                std::cout << "Goodbye" << std::endl;
-                break;
-            default:
-                std::cout << "No such option" << std::endl;
-                break;
-        }        
+        // Wait for next transction
+        std::cout << "Waiting for transaction..." << std::endl;
+        recv(client_fd, &current_transaction, sizeof(put::blockchain::block_chain::transaction_t), 0);
+        blockchain.add_transaction(current_transaction);
+        ledger_transaction_count++;
     }
 
     // closing the connected socket

@@ -38,6 +38,7 @@ int main(int argc, char const* argv[])
     std::stringstream key_buffer;
     key_buffer << public_key_stream.rdbuf();
     std::string key_string(key_buffer.str());
+    public_key_stream.close();
 
     unsigned int user_id;
     // Read stored blockchain - TODO
@@ -121,24 +122,26 @@ int main(int argc, char const* argv[])
     }
 
     // Calculate how much coins do you have
-    unsigned int coins = 0;
+    unsigned int coins = 0, tmp_coins = 0;
     for (int i = 0; i < blocks.size(); i++) {
         current_block = blocks.at(i);
         for (int j = 0; j < 10; j++) {
+            if (current_block.transactions[j].sender_id == user_id) {
+                coins -= current_block.transactions[j].transaction_amount;
+            }
             if (current_block.transactions[j].recipient_id == user_id) {
                 coins += current_block.transactions[j].transaction_amount;
             }
         }
     }
-    std::cout << "You have " << coins << "PUT coins" << std::endl;
+    std::cout << "You have " << coins << " PUT coins" << std::endl;
+    tmp_coins = coins;
 
     unsigned int choice = 1;
-    //unsigned int receiver_id;
+    char new_block[4];
     unsigned int amount;
     unsigned char transaction_or_block[sizeof(put::blockchain::block_chain::transaction_block_t)];
     while (choice != 0) {
-
-
 
         std::cout << "What do you want to do:\n\t0: exit\n\t1: add transaction" << std::endl;
         std::cin >> choice;
@@ -151,8 +154,33 @@ int main(int argc, char const* argv[])
                 std::cin >> receiver_id;
                 std::cout << "Amount: ";
                 std::cin >> amount;
-                current_transaction = blockchain.add_transaction(1, 2, 20);
+                if (amount > tmp_coins) {
+                    std::cout << "Not enough money" << std::endl;
+                    break;
+                }
+                current_transaction = blockchain.create_transaction(1, 2, 20);
                 send(client_fd, &current_transaction, sizeof(current_transaction), 0);
+                tmp_coins -= amount;
+
+                // Check if new block is available
+            recv(client_fd, new_block, 4, 0);
+            std::cout << new_block << " - " << std::strcmp(new_block, "yes") << std::endl;
+            if (std::strcmp(new_block, "yes") == 0) {
+                recv(client_fd, &current_block, sizeof(put::blockchain::block_chain::transaction_block_t), 0);
+                blocks.push_back(current_block);
+
+                // Sync coins
+                for (int i = 0; i < 10; i++) {
+                    current_transaction = current_block.transactions[i];
+                    if (current_transaction.sender_id == user_id)
+                        coins -= current_transaction.transaction_amount;
+                    if (current_transaction.recipient_id == user_id)
+                        coins += current_transaction.transaction_amount;
+                }
+                std::cout << "You have " << coins << "PUT coins" << std::endl;
+                tmp_coins = coins;
+            }
+
                 break;
             case 0:
                 std::cout << "Goodbye" << std::endl;
@@ -160,7 +188,7 @@ int main(int argc, char const* argv[])
             default:
                 std::cout << "No such option" << std::endl;
                 break;
-        }        
+        } 
     }
 
     // closing the connected socket

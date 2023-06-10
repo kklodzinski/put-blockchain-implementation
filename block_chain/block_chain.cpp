@@ -30,6 +30,8 @@ void generate_signature(const transaction_t &transaction, RSA *private_key, unsi
     RSA_sign(NID_sha256, hash, SHA256_DIGEST_LENGTH, signature, &sig_len, private_key);
 }
 
+block_chain::block_chain(uint64_t last_transaction_id)
+    : last_transaction_id(last_transaction_id) {};
 block_chain::block_chain(std::string private_key_file_name, uint64_t last_transaction_id)
     : last_transaction_id(last_transaction_id)
 {
