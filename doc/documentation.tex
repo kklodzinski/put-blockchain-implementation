@@ -1,0 +1,112 @@
+\documentclass{article}
+
+\title{PUT Blockchain Implementation}
+\author{Eng. K. Kłodziński, Eng. K. Baran}
+
+\begin{document}
+\maketitle
+\newpage
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+\section{Documentation}
+This section contains a brief desciption of what most functions do, their parameters and return types.
+
+\subsection{block\_chain.hpp}
+This files contains the main functions relative to the blockchain implementation. Transaction structure and block structure definition, functions to create transactions, add them to the chain, sign transaction and many more. \\
+
+This file is namesapced as \textit{put::blockchain::block\_chain}.
+
+\subsubsection{Constants}
+\begin{itemize}
+\item \textbf{BLOCK\_SIZE} = 10
+\end{itemize}
+
+\subsubsection{struct transaction\_t}
+\begin{itemize}
+\item \textit{uint16\_t transaction\_id} -- ID of the transaction
+\item \textit{uint64\_t sender\_id} -- ID of the sender
+\item \textit{uint64\_t recipient\_id} -- ID of the receiver
+\item \textit{uint64\_t transaction\_amount} -- PUT coins amount
+\item \textit{char signature[256] = \{0\}} -- transaction signature
+\end{itemize}
+
+\subsubsection{struct transaction\_block\_t}
+\begin{itemize}
+\item \textit{unsigned char previous\_block\_hash[SHA256\_DIGEST\_LENGTH]} -- SHA256 of the previous block
+\item \textit{transaction\_t transactions[BLOCK\_SIZE]} -- transaction ledger
+\item \textit{uint64\_t proof\_of\_work = NULL} -- proof-of-work for the current block
+\end{itemize}
+
+\subsubsection{class block\_chain}
+Private fields:
+\begin{itemize}
+\item \textit{RSA *private\_key = nullptr} -- RSA context with the private key file
+\item \textit{uint64\_t last\_transaction\_id} -- ID of the last transaction wich will be later increased
+\item \textit{std::vector<transaction\_t> transactions} -- transactions on the current ledger appended later when new block will be generated
+\item \textit{transaction\_block\_t newest\_transaction\_block} -- last generated transaction block
+\end{itemize}
+
+Public fields: \\ \par
+\textbf{block\_chain(uint64\_t last\_transaction\_id)} \\
+Constructor without private key. Necessary for blockchain miners as they do not need to add transactions to the ledger. Index of last transaction is used for incrementing transaction id when creating transactions.
+\begin{itemize}
+\item \textit{last\_transaction\_id} -- index of last transaction
+\end{itemize}
+
+\textbf{block\_chain(std::string private\_key\_file\_name, uint64\_t last\_transaction\_id)} \\
+Constructor with private RSA key in \textit{pem} format. This key is used to sign transactions. Index of last transaction is used for incrementing transaction id when creating transactions.
+\begin{itemize}
+\item \textit{private\_key\_file\_name} -- string with path to private keyfile. Can be relative.
+\item \textit{last\_transaction\_id} -- index of last transaction
+\end{itemize}
+
+\textbf{void set\_private\_key(std::string private\_key\_file\_name)} \\
+This function reads the RSA private key in PEM format and sets the current RSA context with this key.
+\begin{itemize}
+\item \textit{private\_key\_file\_name} -- string with path to private keyfile. Can be relative.
+\end{itemize}
+
+\textbf{transaction\_t add\_transaction(uint64\_t sender\_id, uint64\_t recipient\_id, uint64\_t transaction\_amount)} \\
+Adds a transaction to the current ledger. Returns error if the ledger does not have space for new transactios. A new block should be manually generated to clear the ledger. Transactions is signed with the RSA private key.
+\begin{itemize}
+\item \textit{sender\_id} -- the ID of the sender
+\item \textit{recipient\_id} -- the ID of the recipient
+\item \textit{transaction\_amount} -- the amount of PUT coins to send
+\end{itemize}
+
+\textbf{transaction\_t create\_transaction(uint64\_t sender\_id, uint64\_t recipient\_id, uint64\_t transaction\_amount)} \\
+Creates a transaction but does not add it to the current ledger. Increases the transaction ID.
+\begin{itemize}
+    \item \textit{sender\_id} -- the ID of the sender
+    \item \textit{recipient\_id} -- the ID of the recipient
+    \item \textit{transaction\_amount} -- the amount of PUT coins to send
+\end{itemize}
+
+\textbf{void add\_transaction(transaction\_t transaction)} \\
+Adds a previously generated transactionto the current block.
+\begin{itemize}
+    \item \textit{transaction} -- the transaction to add to the ledger
+\end{itemize}
+
+\textbf{transaction\_block\_t create\_transaction\_block(unsigned char previous\_block\_hash[SHA256\_DIGEST\_LENGTH])} \\
+Creates a new transaction block if enough transactions are on the ledger. It flushes the current transaction ledger and sets this block as the newest block.
+It requires the has of the previous block as a parameter. This can be getted with \textit{get\_transaction\_hash}.
+\begin{itemize}
+    \item \textit{previous\_block\_hash[SHA256\_DIGEST\_LENGTH]} -- hash of the previous transaction block
+\end{itemize}
+Returns the generated block. \\ \par
+
+\textbf{unsigned char *get\_transaction\_block\_hash()} \\
+Gets the last transaction block hash. It is generated anew every call as this has is not stored in the block. \\ \par
+
+\textbf{void get\_transaction\_block\_hash(unsigned char * transaction\_hash)} \\
+Gets the last transaction block and saves it into \textit{transaction\_hash} memory block.
+\begin{itemize}
+    \item \textit{transaction\_hash} -- pointer to beginning of char array
+\end{itemize}
+
+\end{document}
