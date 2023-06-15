@@ -30,3 +30,12 @@
 *.exe
 *.out
 *.app
+
+# Other
+.gdb_history
+*.log
+*.toc
+*.aux
+*.synctex.gz
+/build
+/keys

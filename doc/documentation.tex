@@ -1,0 +1,178 @@
+\documentclass{article}
+
+\title{PUT Blockchain Implementation}
+\author{Eng. K. Kłodziński, Eng. K. Baran}
+
+\begin{document}
+\maketitle
+\newpage
+
+\tableofcontents
+\newpage
+
+\part{Introduction}
+Blockchain technologies were firstly proposed by Satoshi Nakamoto to counter the problem of double spending with digital currencies. This lead to the implementation of Bitcoin as a first Cryptocurrency. The world of cryptocurrencies and blockchain evolved after that to include different consensus mechanisms, verification processes and more. It is worth to say, that blockchain can be implemented not only in cryptocurrencies, but also in smart contracts and voting systems. \\ \par
+We designed our own cryptocurrency blandly following this requirements:
+\begin{enumerate}
+	\item The blockchain should be implemented using a programming language of your choice with no restrictions.
+	\item The blockchain should support the addition of new blocks containing transaction data, ensuring secure storage.
+	\item Cryptographic mechanisms such as hashing and digital signatures should be employed to ensure the integrity and security of the data. External libraries like OpenSSL can be used for cryptographic functionalities.
+	\item Consensus mechanisms such as proof-of-work or proof-of-stake should be implemented to ensure the validity of the blocks.
+\end{enumerate}
+
+Our project also took into account the following optional requirements:
+\begin{enumerate}
+	\item The blockchain should include a user interface allowing users to add and view transactions, as well as to observe the current state of the blockchain.
+	\item Basic security features such as authentication and access control should be incorporated to prevent unauthorized access to the blockchain.
+	\item The blockchain should be thoroughly tested and evaluated for both its performance and security.
+\end{enumerate}
+
+Lastly, this report will include information about the implementation we used, the technologies involved and design decisions. We will also describe somewhat in depth how to implementation should work and some problems we encountered along the way. 
+
+
+\newpage
+\part{The implementation}
+Here we will describe the implementation, technologies used and problems we encountered along the way. Function definitions and descriptions are in part \ref{doc}.
+
+\section{Technologies}
+We implemented our cryptocurrency, which from now on will be called \textbf{PUT~coins}, in \textbf{C++} with the usage of sockets. This choice was driven by previous knowledge of the programming language and efficiency of socket programming as well as availability of OpenSSL libraries. \\ \par
+The code begun on a Windows machine, but was later ported to work on GNU/Linux, which provides the crypto library out of the box in many distributions.
+
+\section{Design choices}
+We choose a centralized approach. This choice was driven by the nature of socket programming in C/C++. Apart from the server we decided to split clients and miners. The server is responsible for syncing the client with current blocks and receiving transactions from them. These transactions are to be sent to miners, which have been synced upon connecting. Once a new block is able to be mined, the newest block should be chosen to be added to the chain. Both the server and the user have a copy of the blockchain, while the miner only have a list of transactions on the ledger and last hashes. \\ \par
+
+We decided to limit ledgers to 10 transactions. Each transaction is composed of sender and receiver IDs, transaction amount and a signature of the transaction. This signature is achieved with an RSA 2048 bit key. This key has to be generated separately and has to be in PEM format. An example for generating the key is given in the Github repository. The public RSA key is used to identify the user and is also used by the miner. This way, the server knows who to award the new mined coins. \\ \par
+
+To prevent spending money we do not have, the client checks transactions on the blockchain and syncs the current coins with it. Since we decided to not give it transactions on ledgers, the client keeps an unconfirmed money amount. Once a new block is available, the current coins will be synced accordingly. \\ \par
+
+We choose a proof-of-work consensus mechanism with SHA256 as the hashing algorithm. For each block, the difficulty is always set to 1, which means one leading zero byte in the block hash. \\ \par
+
+For the mining process, proof-of-work is an integer with is incremented until the difficulty is satisfied. Since we acknowledged that no miners could be connected to the server, the latter mines a block itself when enough transactions are available.
+
+\section{Problems and tests}
+The main problem we encountered during the implementation was correctly syncing the clients and miners with the server. First we though of having the user mine blocks when available. This posed the problem of deciding who mined the block first, what to do with excess transactions and many more. Since we did not want to loose blocks or transactions and neither have clients with different block, we split the mining part. \\ \par
+
+Another problem we encountered was transaction verification. The RSA public key is sent by the user to the server. This key is received correctly as plaintext. Unfortunately we were from there not able to load the key locally. Attempting to send the loaded key as bytes resulted in the same problem. \\ \par
+
+During design we tested if everything worked correctly, which unfortunately was not the case. We were able to experience not only Segmentation Fault errors, but also IOT operation errors.
+
+\section{How it should work}
+First of all a public and private RSA 2048 key should be generated and saved in PEM format. The sever can then be run from the command line. 
+
+\subsection{Client}
+The client connects to the server, sends it public key and received its user ID for the transactions. After that the user is synced with the latest blocks by sending to the server the current block hash it has and receiving the remaining ones. The transactions on the blocks are checked to calculate user coins. The user is then displayed it current PUT coins amount. \\ \par
+
+The user can choose to add a transaction. If so, he will be asked for a received ID and an amount. The amount has to be positive and not greater that it current unconfirmed coins. If everything is correct, a transaction is generated and sent to the server. Unconfirmed coins are updated accordingly. The user then sends its latest block hash to the server to see if he is up to date. If not, he will receive the latest block available and sync it current coins. \\ \par
+
+The user can also choose to do nothing and disconnect.
+
+\subsection{Miner}
+The miner sends to the server the client public RSA key. It then receives the latest transactions on the ledger, the hash of the last block and waits for new transactions. If enough are available it sends the new block to the server along with a timestamp.
+
+\subsection{Server}
+The server does all the hard work. To distinguish clients from miners, when a new connection is initialised it receives an identity; \textit{client} for clients and \textit{minerr} for miners. It syncs them accordingly to their own needs. \\ \par
+
+When a new transaction is received by the client, the transaction is added to the current ledger and sent to the miners if available. After that it syncs the client with the newest block if available. \\ \par
+
+If enough transactions are available a new block is calculated. If a miner sends a block to the server. It is checked with other timestamps to see which one was the first. The server one is not taken into account. A reward should be sent to the client that calculated the block first.
+
+
+\newpage
+\part{Documentation}\label{doc}
+This section contains a brief description of what most functions do, their parameters and return types.
+
+\section{block\_chain.hpp}
+This files contains the main functions relative to the blockchain implementation. Transaction structure and block structure definition, functions to create transactions, add them to the chain, sign transaction and many more. \\
+
+This file is namespaced as \textit{put::blockchain::block\_chain}.
+
+\subsection{Constants}
+\begin{itemize}
+\item \textbf{BLOCK\_SIZE} = 10
+\end{itemize}
+
+\subsection{struct transaction\_t}
+\begin{itemize}
+\item \textit{uint16\_t transaction\_id} -- ID of the transaction
+\item \textit{uint64\_t sender\_id} -- ID of the sender
+\item \textit{uint64\_t recipient\_id} -- ID of the receiver
+\item \textit{uint64\_t transaction\_amount} -- PUT coins amount
+\item \textit{char signature[256] = \{0\}} -- transaction signature
+\end{itemize}
+
+\subsection{struct transaction\_block\_t}
+\begin{itemize}
+\item \textit{unsigned char previous\_block\_hash[SHA256\_DIGEST\_LENGTH]} -- SHA256 of the previous block
+\item \textit{transaction\_t transactions[BLOCK\_SIZE]} -- transaction ledger
+\item \textit{uint64\_t proof\_of\_work = NULL} -- proof-of-work for the current block
+\end{itemize}
+
+\subsection{class block\_chain}
+\subsubsection{Private fields}
+\begin{itemize}
+\item \textit{RSA *private\_key = nullptr} -- RSA context with the private key file
+\item \textit{uint64\_t last\_transaction\_id} -- ID of the last transaction which will be later increased
+\item \textit{std::vector<transaction\_t> transactions} -- transactions on the current ledger appended later when new block will be generated
+\item \textit{transaction\_block\_t newest\_transaction\_block} -- last generated transaction block
+\end{itemize}
+
+\subsubsection{Public fields}
+\textbf{block\_chain(uint64\_t last\_transaction\_id)}
+Constructor without private key. Necessary for blockchain miners as they do not need to add transactions to the ledger. Index of last transaction is used for incrementing transaction id when creating transactions.
+\begin{itemize}
+\item \textit{last\_transaction\_id} -- index of last transaction
+\end{itemize}
+
+\textbf{block\_chain(std::string private\_key\_file\_name, uint64\_t last\_transaction\_id)} \\
+Constructor with private RSA key in \textit{PEM} format. This key is used to sign transactions. Index of last transaction is used for incrementing transaction id when creating transactions.
+\begin{itemize}
+\item \textit{private\_key\_file\_name} -- string with path to private key file. Can be relative.
+\item \textit{last\_transaction\_id} -- index of last transaction
+\end{itemize}
+
+\textbf{void set\_private\_key(std::string private\_key\_file\_name)} \\
+This function reads the RSA private key in PEM format and sets the current RSA context with this key.
+\begin{itemize}
+\item \textit{private\_key\_file\_name} -- string with path to private key file. Can be relative.
+\end{itemize}
+
+\textbf{transaction\_t add\_transaction(uint64\_t sender\_id, uint64\_t recipient\_id, uint64\_t transaction\_amount)} \\
+Adds a transaction to the current ledger. Returns error if the ledger does not have space for new transactions. A new block should be manually generated to clear the ledger. Transactions is signed with the RSA private key.
+\begin{itemize}
+\item \textit{sender\_id} -- the ID of the sender
+\item \textit{recipient\_id} -- the ID of the recipient
+\item \textit{transaction\_amount} -- the amount of PUT coins to send
+\end{itemize}
+
+\textbf{transaction\_t create\_transaction(uint64\_t sender\_id, uint64\_t recipient\_id, uint64\_t transaction\_amount)} \\
+Creates a transaction but does not add it to the current ledger. Increases the transaction ID.
+\begin{itemize}
+    \item \textit{sender\_id} -- the ID of the sender
+    \item \textit{recipient\_id} -- the ID of the recipient
+    \item \textit{transaction\_amount} -- the amount of PUT coins to send
+\end{itemize}
+
+\textbf{void add\_transaction(transaction\_t transaction)} \\
+Adds a previously generated transaction to the current block.
+\begin{itemize}
+    \item \textit{transaction} -- the transaction to add to the ledger
+\end{itemize}
+
+\textbf{transaction\_block\_t create\_transaction\_block(unsigned char previous\_block\_hash[SHA256\_DIGEST\_LENGTH])} \\
+Creates a new transaction block if enough transactions are on the ledger. It flushes the current transaction ledger and sets this block as the newest block.
+It requires the has of the previous block as a parameter. This can be taken from \textit{get\_transaction\_hash}.
+\begin{itemize}
+    \item \textit{previous\_block\_hash[SHA256\_DIGEST\_LENGTH]} -- hash of the previous transaction block
+\end{itemize}
+Returns the generated block. \\ \par
+
+\textbf{unsigned char *get\_transaction\_block\_hash()} \\
+Gets the last transaction block hash. It is generated anew every call as this has is not stored in the block. \\ \par
+
+\textbf{void get\_transaction\_block\_hash(unsigned char * transaction\_hash)} \\
+Gets the last transaction block and saves it into \textit{transaction\_hash} memory block.
+\begin{itemize}
+    \item \textit{transaction\_hash} -- pointer to beginning of char array
+\end{itemize}
+
+\end{document}
